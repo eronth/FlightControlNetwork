@@ -1,6 +1,6 @@
 
 /* Using MHeironimus' ArduinoJoystickLibrary
-https://github.com/MHeironimus/ArduinoJoystickLibrary */
+  https://github.com/MHeironimus/ArduinoJoystickLibrary */
 #include "Joystick.h"
 #include <math.h>
 
@@ -15,10 +15,13 @@ https://github.com/MHeironimus/ArduinoJoystickLibrary */
 
 
 // Create Joystick
-Joystick_ Joystick(JOYSTICK_DEFAULT_REPORT_ID, 
-  JOYSTICK_TYPE_MULTI_AXIS, 7, 0,
-  false, false, false, false, false, false,
-  true, true, false, false, false);
+Joystick_ Joystick(JOYSTICK_DEFAULT_REPORT_ID,
+                   JOYSTICK_TYPE_MULTI_AXIS, 7, 0,
+                   false, false, false, false, false, false,
+                   true, true, false, false, false);
+
+const int toggleInputMilSecDelay = 300;
+const int numberOfThrottleButtons = 4;
 
 // Digital/Analog input pin setup:
 const int rudderEncoder1Pin = 0; // Rudder
@@ -28,13 +31,10 @@ const int rudderButtonPin = 2;
 const int throttleToggleFPin = 3;  // Throttle Toggle
 const int throttleToggleBPin = 4;  // Throttle Toggle
 const int throttleUpDownPin  = A0; // Throttle
-const int throttleButton1Pin = 8;  // Throttle Button
-const int throttleButton2Pin = 9;  // Throttle Button
-const int throttleButton3Pin = 10; // Throttle Button
-const int throttleButton4Pin = 11; // Throttle Button
+const int throttleButtonPins[] = {8, 9, 10, 11}; // Throttle Button
 
-
-const int inPin5 = 5; 
+// Placeholders
+const int inPin5 = 5;
 const int inPin6 = 6;
 const int inPin7 = 7;
 
@@ -53,6 +53,9 @@ int rudderButtonPress;
 const int throttleRangeMin = -127;
 const int throttleRangeMax = 127;
 char throttlePos = initialPos;
+int throttleUpDownState = 0;
+int throttleMapping;
+
 int throttleToggleF;
 int throttleToggleB;
 int throttleToggleFullState;
@@ -60,24 +63,16 @@ int throttleToggleLastFullState;
 int throttleToggleFStateButtonMap = 4;
 int throttleToggleNStateButtonMap = 5;
 int throttleToggleBStateButtonMap = 6;
-
-int throttleUpDownState = 0;
-int throttleButton1State = 0;
-int throttleButton2State = 0;
-int throttleButton3State = 0;
-int throttleButton4State = 0;
-int throttleButton1LastState = 0;
-int throttleButton2LastState = 0;
-int throttleButton3LastState = 0;
-int throttleButton4LastState = 0;
-const int throttleButton1JSB = 0;
-const int throttleButton2JSB = 1;
-const int throttleButton3JSB = 2;
-const int throttleButton4JSB = 3;
 const int throttleToggleF_JSB = 4;
 const int throttleToggleN_JSB = 5;
 const int throttleToggleB_JSB = 6;
-int throttleToggleCountDelay;
+int throttleToggleCountDelay = -1;
+
+int throttleButtonStates[] = {0, 0, 0, 0};
+int throttleButtonLastStates[] = {0, 0, 0, 0};
+const int throttleButton_JSBs[] = {0, 1, 2, 3};
+
+
 
 
 // Placeholder
@@ -97,7 +92,7 @@ bool pressed = false;
 void setup() {
   // initialize serial communication at 9600 bits per second:
   Serial.begin(9600);
-  
+
   // Set up pin inputs and outputs.
   pinMode(rudderEncoder1Pin, INPUT);
   pinMode(rudderEncoder2Pin, INPUT);
@@ -107,16 +102,15 @@ void setup() {
   pinMode(inPin5, INPUT_PULLUP );
   pinMode(inPin6, INPUT_PULLUP );
   pinMode(inPin7, INPUT);
-  pinMode(throttleButton1Pin, INPUT_PULLUP);
-  pinMode(throttleButton2Pin, INPUT_PULLUP);
-  pinMode(throttleButton3Pin, INPUT_PULLUP);
-  pinMode(throttleButton4Pin, INPUT_PULLUP);
+  for (int i = 0; i < numberOfThrottleButtons; i++) {
+    pinMode(throttleButtonPins[i], INPUT_PULLUP);
+  }
   // Copied code!!!!!
   Serial.println(F("Initialize System"));
   //Init potentiometer
   pinMode(throttleUpDownPin, INPUT);
 
-  
+
   // Prepare Joystick and Joystick range values.
   //Joystick.setXAxisRange(-127, 127);
   //Joystick.setYAxisRange(-127, 127);
@@ -147,15 +141,14 @@ void loop() {
   rudderEncoder1State = digitalRead(rudderEncoder1Pin);   // Rudder
   rudderEncoder2State = digitalRead(rudderEncoder2Pin);   // Rudder
   rudderButtonPress = digitalRead(rudderButtonPin);       // Rudder
-  
+
   throttleToggleF = digitalRead(throttleToggleFPin);      // Throttle
   throttleToggleB = digitalRead(throttleToggleBPin);      // Throttle
   throttleUpDownState = analogRead(throttleUpDownPin);    // Throttle
 
-  throttleButton1State = digitalRead(throttleButton1Pin); // Throttle
-  throttleButton2State = digitalRead(throttleButton2Pin); // Throttle
-  throttleButton3State = digitalRead(throttleButton3Pin); // Throttle
-  throttleButton4State = digitalRead(throttleButton4Pin); // Throttle
+  for (int i = 0; i < numberOfThrottleButtons; i++) {
+    throttleButtonStates[i] = digitalRead(throttleButtonPins[i]); // Throttle
+  }
 
   pin5State = digitalRead(inPin5); // Throttle
   pin6State = digitalRead(inPin6); // Throttle
@@ -167,49 +160,50 @@ void loop() {
   //                                    Throttle Inputs
   //------------------------------------------------------------------------------------
   // Throttle Button Presses
-  if (throttleButton1State != throttleButton1LastState) {
-    Joystick.setButton(throttleButton1JSB, throttleButton1State);
-    throttleButton1LastState = throttleButton1State;
-    pressed = !pressed;
+  for (int i = 0; i < numberOfThrottleButtons; i++) {
+    if (throttleButtonStates[i] != throttleButtonLastStates[i]) {
+      Joystick.setButton(throttleButton_JSBs[i], throttleButtonStates[i]);
+      String prState = String("") + (throttleButtonStates[i] == 1 ? " Pressed" : " Released");
+      Serial.println( String("|") + "Button " + i + prState);
+
+      throttleButtonLastStates[i] = throttleButtonStates[i];
+      pressed = !pressed;
+    }
   }
-  if (throttleButton2State != throttleButton2LastState) {
-    Joystick.setButton(throttleButton2JSB, throttleButton2State);
-    throttleButton2LastState = throttleButton2State;
-    pressed = !pressed;
-  }
-  if (throttleButton3State != throttleButton3LastState) {
-    Joystick.setButton(throttleButton3JSB, throttleButton3State);
-    throttleButton3LastState = throttleButton3State;
-    pressed = !pressed;
-  }
-  if (throttleButton4State != throttleButton4LastState) {
-    Joystick.setButton(throttleButton4JSB, throttleButton4State);
-    throttleButton4LastState = throttleButton4State;
-    pressed = !pressed;
-  }
-  
+
   // Throttle Toggle Inputs
   if (throttleToggleF == 1) {
     throttleToggleFullState = 1;
   } else if (throttleToggleB == 1) {
     throttleToggleFullState = -1;
   } else {
-    throttleToggleFullState = 0; 
+    throttleToggleFullState = 0;
   }
   // If the state has changed, we need to toggle a quick button press.
   if (throttleToggleLastFullState != throttleToggleFullState) {
     if (throttleToggleFullState == -1) {
       Joystick.setButton(throttleToggleB_JSB, 1);
+      Serial.println("Toggle Back");
     } else if (throttleToggleFullState == 0) {
       Joystick.setButton(throttleToggleN_JSB, 1);
+      Serial.println("Toggle Middle");
     } else if (throttleToggleFullState == 1) {
       Joystick.setButton(throttleToggleF_JSB, 1);
+      Serial.println("Toggle Front");
     }
     throttleToggleLastFullState = throttleToggleFullState;
+    throttleToggleCountDelay = toggleInputMilSecDelay;
   } else {
-    Joystick.setButton(throttleToggleF_JSB, 0);
-    Joystick.setButton(throttleToggleN_JSB, 0);
-    Joystick.setButton(throttleToggleB_JSB, 0);
+    if (throttleToggleCountDelay == 0) {
+      Joystick.setButton(throttleToggleF_JSB, 0);
+      Joystick.setButton(throttleToggleN_JSB, 0);
+      Joystick.setButton(throttleToggleB_JSB, 0);
+      Serial.println("Toggle release");
+      throttleToggleCountDelay = -1;
+    } else if (throttleToggleCountDelay != -1) {
+      throttleToggleCountDelay--;
+    }
+
   }
 
   // Throttle up/down input.
@@ -217,13 +211,13 @@ void loop() {
   int throttledUp = 112;
   int throttledDown = 919;
   if (throttleToggleF == 1 || throttleToggleB == 1) {
-    
+
     // for some reason, 924 and 153 if shields up
     throttledUp = 153;
     throttledDown = 924;
   }
-  int throttleMap = map(throttleUpDownState, throttledDown, throttledUp, throttleRangeMin, throttleRangeMax);
-  Joystick.setThrottle(throttleMap);
+  throttleMapping = map(throttleUpDownState, throttledDown, throttledUp, throttleRangeMin, throttleRangeMax);
+  Joystick.setThrottle(throttleMapping);
 
   //------------------------------------------------------------------------------------
   //                                    Rudder inputs
@@ -240,50 +234,48 @@ void loop() {
     }
     rudderEncoder1LastState = rudderEncoder1State;
   }
-  
+
   //------------------------------------------------------------------------------------
   //                                    Output/Debug section
   //------------------------------------------------------------------------------------
-  outputDebugValues();
-  String output = String("|") 
+  //outputDebugValues();
+  loopN++;
+
+  // delay in between reads for stability
+  delay(1);
+}
+
+void outputDebugValues()
+{
+  String output = String("|")
                   + " Position:" + displaySpacing((int)RudderPos, 3, true)
                   + "  |  Set number:" + displaySpacing((int)loopN, 5, false)
                   + "  |  (" + rudderEncoder1State + ", " + rudderEncoder2State + ")"
                   + "  | Rudder Click: " + rudderButtonPress
                   + "  |  Throttle Toggle: " + displaySpacing((int)throttleToggleFullState, 1, true) + " from " + throttleToggleF + " " + throttleToggleB
-                  + "  |  Throttled to " + throttleUpDownState + " " + throttleMap
-                  + "  |  Buttons: " + pressed + throttleButton1State + " " + throttleButton2State + " " + throttleButton3State + " " + throttleButton4State
+                  + "  |  Throttled to " + throttleUpDownState + " " + throttleMapping
+                  + "  |  Buttons: " + pressed + throttleButtonStates[0] + " " + throttleButtonStates[1] + " " + throttleButtonStates[2] + " " + throttleButtonStates[3]
                   //+ "  |  p6: " + pin6State
                   //+ "  |  p7: " + pin7State
                   + "  |";
-                  
-  loopN++;
-  // Print out the state of the button:
-  Serial.println(output);
-  
-  // delay in between reads for stability
-  delay(1);        
-}
-
-void outputDebugValues()
-{
-  
+    // Print out the state of the button:
+    Serial.println(output);
 }
 ///////////////////////////////////// COPIED CODE ////////////////////////////
-void readPot(){/* function readPot */
-////Read Potentiometer value
+void readPot() { /* function readPot */
+  ////Read Potentiometer value
 
-Serial.print("Raw val : ");Serial.println(throttleUpDownState);
-Serial.print("Phys val : ");Serial.println(potRawToPhys(throttleUpDownState));
-delay(200);
-                        }
+  Serial.print("Raw val : "); Serial.println(throttleUpDownState);
+  Serial.print("Phys val : "); Serial.println(potRawToPhys(throttleUpDownState));
+  delay(200);
+}
 
-float potRawToPhys(int raw){/* function potRawToPhys */
-////Potentiometer conversion rule
-float Vout = float(raw) * (5/float(1024));//Conversion analog to voltage
-float phys = ( 1/*R*/ * (5 - Vout))/5;//Conversion voltage to resistance
+float potRawToPhys(int raw) { /* function potRawToPhys */
+  ////Potentiometer conversion rule
+  float Vout = float(raw) * (5 / float(1024)); //Conversion analog to voltage
+  float phys = ( 1/*R*/ * (5 - Vout)) / 5; //Conversion voltage to resistance
 
- return phys;
+  return phys;
 }
 ///////////////////////////////////// COPIED CODE ////////////////////////////
 
@@ -293,7 +285,7 @@ String displaySpacing(int valueToSpaceFor, int maxDigits, bool canBeNegative)
   String retval;
 
   // Automatically hand out enough spaces based on possible digit sizes.
-  for(int i = 1; i < maxDigits; i++)
+  for (int i = 1; i < maxDigits; i++)
   {
     if (abs(valueToSpaceFor) < pow(10, i))
     {
@@ -306,5 +298,5 @@ String displaySpacing(int valueToSpaceFor, int maxDigits, bool canBeNegative)
   {
     retval += " ";
   }
-  return retval+valueToSpaceFor;
+  return retval + valueToSpaceFor;
 }
