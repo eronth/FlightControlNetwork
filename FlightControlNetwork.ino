@@ -38,9 +38,8 @@ const int inPin5 = 5;
 const int inPin6 = 6;
 const int inPin7 = 7;
 
-const char initialPos = 0;
-
 // Rudder related vars.
+const char initialPos = 0;
 const int rudderRangeMin = -127;
 const int rudderRangeMax = 127;
 char RudderPos = initialPos;
