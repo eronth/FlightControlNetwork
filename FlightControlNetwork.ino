@@ -5,12 +5,8 @@
 #include <math.h>
 
 ///////////////////////////////////// COPIED CODE ////////////////////////////
-
 //Constants
 #define NB_POT 1
-
-
-
 ///////////////////////////////////// COPIED CODE ////////////////////////////
 
 
@@ -20,14 +16,18 @@ Joystick_ Joystick(JOYSTICK_DEFAULT_REPORT_ID,
                    false, false, false, false, false, false,
                    true, true, false, false, false);
 
-const int toggleInputMilSecDelay = 300;
+
 const int numberOfThrottleButtons = 4;
 
-// Digital/Analog input pin setup:
+//------------------------------------------------------------------------------------
+//                                    Set pin vars
+//------------------------------------------------------------------------------------
+// Rudder
 const int rudderEncoder1Pin = 0; // Rudder
 const int rudderEncoder2Pin = 1; // Rudder
 const int rudderButtonPin = 2;
 
+// Throttle
 const int throttleToggleFPin = 3;  // Throttle Toggle
 const int throttleToggleBPin = 4;  // Throttle Toggle
 const int throttleUpDownPin  = A0; // Throttle
@@ -37,47 +37,80 @@ const int throttleButtonPins[] = {8, 9, 10, 11}; // Throttle Button
 const int inPin5 = 5;
 const int inPin6 = 6;
 const int inPin7 = 7;
+const int inPin12 = 12;
+const int inPin13 = 13;
+const int inPinA1 = A1;
+const int inPinA2 = A2;
+const int inPinA3 = A3;
+const int inPinA4 = A4;
+const int inPinA5 = A5;
 
-// Rudder related vars.
-const char initialPos = 0;
-const int rudderRangeMin = -127;
-const int rudderRangeMax = 127;
-char RudderPos = initialPos;
-int rudderEncoder1State;
-int rudderEncoder1LastState;
-int rudderEncoder2State;
-int rudderButtonPress;
+//------------------------------------------------------------------------------------
+//                                    Create various state and last-state vars
+//------------------------------------------------------------------------------------
+// Rudder States
+int rudderEncoder1State = 0;
+int rudderEncoder1LastState = 0;
+int rudderEncoder2State = 0;
+int rudderButtonState = 0;
+int rudderButtonLastState = 0;
 
-// Throttle related vars.
-const int throttleRangeMin = -127;
-const int throttleRangeMax = 127;
-char throttlePos = initialPos;
+// Throttle States
 int throttleUpDownState = 0;
-int throttleMapping;
-
-int throttleToggleF;
-int throttleToggleB;
-int throttleToggleFullState;
-int throttleToggleLastFullState;
-int throttleToggleFStateButtonMap = 4;
-int throttleToggleNStateButtonMap = 5;
-int throttleToggleBStateButtonMap = 6;
-const int throttleToggleF_JSB = 4;
-const int throttleToggleN_JSB = 5;
-const int throttleToggleB_JSB = 6;
-int throttleToggleCountDelay = -1;
-
 int throttleButtonStates[] = {0, 0, 0, 0};
 int throttleButtonLastStates[] = {0, 0, 0, 0};
-const int throttleButton_JSBs[] = {0, 1, 2, 3};
 
-
-
+int throttleToggleFState = 0;
+int throttleToggleBState = 0;
+int throttleToggleCombinedState = 0;
+int throttleToggleLastFullState = 0;
 
 // Placeholder
 int pin5State;
 int pin6State;
 int pin7State;
+int pin12State;
+int pin13State;
+int pinA1State;
+int pinA2State;
+int pinA3State;
+int pinA4State;
+int pinA5State;
+
+//------------------------------------------------------------------------------------
+//                                    Create position trackers
+//------------------------------------------------------------------------------------
+const char initialPos = 0;
+
+// Rudder positioning
+char rudderPosition = initialPos;
+const int rudderRangeMin = -127;
+const int rudderRangeMax = 127;
+
+// Throttle Positioning
+int throttlePosition = initialPos;
+const int throttleRangeMin = -127;
+const int throttleRangeMax = 127;
+
+
+//------------------------------------------------------------------------------------
+//                                    Map physical button to a JoyStick's Buttons
+//------------------------------------------------------------------------------------
+// Rudder Buttons
+// TODO map rudder?
+
+// Throttle Buttons
+const int throttleButton_JSBs[] = {0, 1, 2, 3};
+const int throttleToggleF_JSB = 4;
+const int throttleToggleN_JSB = 5;
+const int throttleToggleB_JSB = 6;
+
+// These are used to create a bit of a delay before releasing the button so games can register it.
+int throttleToggleDelayCount = -1;
+const int toggleInputMilSecDelay = 300;
+
+
+
 
 
 // Loop check for debugging. Only iterates loops on changes.
@@ -135,20 +168,23 @@ void setup() {
 //////////////////////////////////////////////////////////////////////////////////////
 // The loop routine runs over and over again forever:
 void loop() {
-  // Read the input pins:
+  //------------------------------------------------------------------------------------
+  //                                    Pull values from Pins
+  //------------------------------------------------------------------------------------
   // Rudder Items
   rudderEncoder1State = digitalRead(rudderEncoder1Pin);   // Rudder
   rudderEncoder2State = digitalRead(rudderEncoder2Pin);   // Rudder
-  rudderButtonPress = digitalRead(rudderButtonPin);       // Rudder
-
-  throttleToggleF = digitalRead(throttleToggleFPin);      // Throttle
-  throttleToggleB = digitalRead(throttleToggleBPin);      // Throttle
+  rudderButtonState = digitalRead(rudderButtonPin);       // Rudder
+  
+  // Throttle Items
+  throttleToggleFState = digitalRead(throttleToggleFPin);      // Throttle
+  throttleToggleBState = digitalRead(throttleToggleBPin);      // Throttle
   throttleUpDownState = analogRead(throttleUpDownPin);    // Throttle
-
   for (int i = 0; i < numberOfThrottleButtons; i++) {
     throttleButtonStates[i] = digitalRead(throttleButtonPins[i]); // Throttle
   }
 
+  // Placeholder Items
   pin5State = digitalRead(inPin5); // Throttle
   pin6State = digitalRead(inPin6); // Throttle
   pin7State = digitalRead(inPin7); // Throttle
@@ -171,36 +207,36 @@ void loop() {
   }
 
   // Throttle Toggle Inputs
-  if (throttleToggleF == 1) {
-    throttleToggleFullState = 1;
-  } else if (throttleToggleB == 1) {
-    throttleToggleFullState = -1;
+  if (throttleToggleFState == 1) {
+    throttleToggleCombinedState = 1;
+  } else if (throttleToggleBState == 1) {
+    throttleToggleCombinedState = -1;
   } else {
-    throttleToggleFullState = 0;
+    throttleToggleCombinedState = 0;
   }
   // If the state has changed, we need to toggle a quick button press.
-  if (throttleToggleLastFullState != throttleToggleFullState) {
-    if (throttleToggleFullState == -1) {
+  if (throttleToggleLastFullState != throttleToggleCombinedState) {
+    if (throttleToggleCombinedState == -1) {
       Joystick.setButton(throttleToggleB_JSB, 1);
       Serial.println("Toggle Back");
-    } else if (throttleToggleFullState == 0) {
+    } else if (throttleToggleCombinedState == 0) {
       Joystick.setButton(throttleToggleN_JSB, 1);
       Serial.println("Toggle Middle");
-    } else if (throttleToggleFullState == 1) {
+    } else if (throttleToggleCombinedState == 1) {
       Joystick.setButton(throttleToggleF_JSB, 1);
       Serial.println("Toggle Front");
     }
-    throttleToggleLastFullState = throttleToggleFullState;
-    throttleToggleCountDelay = toggleInputMilSecDelay;
+    throttleToggleLastFullState = throttleToggleCombinedState;
+    throttleToggleDelayCount = toggleInputMilSecDelay;
   } else {
-    if (throttleToggleCountDelay == 0) {
+    if (throttleToggleDelayCount == 0) {
       Joystick.setButton(throttleToggleF_JSB, 0);
       Joystick.setButton(throttleToggleN_JSB, 0);
       Joystick.setButton(throttleToggleB_JSB, 0);
       Serial.println("Toggle release");
-      throttleToggleCountDelay = -1;
-    } else if (throttleToggleCountDelay != -1) {
-      throttleToggleCountDelay--;
+      throttleToggleDelayCount = -1;
+    } else if (throttleToggleDelayCount != -1) {
+      throttleToggleDelayCount--;
     }
 
   }
@@ -209,29 +245,37 @@ void loop() {
   // The max and min seems to be... 919, 112, and I don't know why!
   int throttledUp = 112;
   int throttledDown = 919;
-  if (throttleToggleF == 1 || throttleToggleB == 1) {
-
+  if (throttleToggleFState == 1 || throttleToggleBState == 1) {
     // for some reason, 924 and 153 if shields up
     throttledUp = 153;
     throttledDown = 924;
   }
-  throttleMapping = map(throttleUpDownState, throttledDown, throttledUp, throttleRangeMin, throttleRangeMax);
-  Joystick.setThrottle(throttleMapping);
+  throttlePosition = map(throttleUpDownState, throttledDown, throttledUp, throttleRangeMin, throttleRangeMax);
+  Joystick.setThrottle(throttlePosition);
 
   //------------------------------------------------------------------------------------
   //                                    Rudder inputs
   //------------------------------------------------------------------------------------
   if (rudderEncoder1State != rudderEncoder1LastState) {
     if (rudderEncoder2State != rudderEncoder1State) {
-      RudderPos++;
-      Joystick.setRudder(RudderPos);
-      //Joystick.setThrottle(RudderPos);
+      rudderPosition++;
+      Joystick.setRudder(rudderPosition);
     } else {
-      RudderPos--;
-      Joystick.setRudder(RudderPos);
-      //Joystick.setThrottle(RudderPos);
+      rudderPosition--;
+      Joystick.setRudder(rudderPosition);
     }
+    Serial.println("Rudder position at " + rudderPosition);
     rudderEncoder1LastState = rudderEncoder1State;
+  }
+
+  // Rudder button (purposeless)
+  if (rudderButtonState != rudderButtonLastState) {
+      //Joystick.setButton(throttleButton_JSBs[i], );
+      String prState = String("") + (rudderButtonState == 1 ? " Pressed" : " Released");
+      Serial.println( String("|") + "Rudder button" + prState);
+
+      rudderButtonLastState = rudderButtonState;
+      pressed = !pressed;
   }
 
   //------------------------------------------------------------------------------------
@@ -247,12 +291,12 @@ void loop() {
 void outputDebugValues()
 {
   String output = String("|")
-                  + " Position:" + displaySpacing((int)RudderPos, 3, true)
+                  + " Position:" + displaySpacing((int)rudderPosition, 3, true)
                   + "  |  Set number:" + displaySpacing((int)loopN, 5, false)
                   + "  |  (" + rudderEncoder1State + ", " + rudderEncoder2State + ")"
-                  + "  | Rudder Click: " + rudderButtonPress
-                  + "  |  Throttle Toggle: " + displaySpacing((int)throttleToggleFullState, 1, true) + " from " + throttleToggleF + " " + throttleToggleB
-                  + "  |  Throttled to " + throttleUpDownState + " " + throttleMapping
+                  + "  | Rudder Click: " + rudderButtonState
+                  + "  |  Throttle Toggle: " + displaySpacing((int)throttleToggleCombinedState, 1, true) + " from " + throttleToggleFState + " " + throttleToggleBState
+                  + "  |  Throttled to " + throttleUpDownState + " " + throttlePosition
                   + "  |  Buttons: " + pressed + throttleButtonStates[0] + " " + throttleButtonStates[1] + " " + throttleButtonStates[2] + " " + throttleButtonStates[3]
                   //+ "  |  p6: " + pin6State
                   //+ "  |  p7: " + pin7State
